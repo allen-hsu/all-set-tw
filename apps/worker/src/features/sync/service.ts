@@ -1,5 +1,6 @@
 import { beginActivityRun } from "./activity-detail-repository";
 import { prepareCtbcAuthorizationWrite } from "./ctbc-authorizations";
+import { prepareEsunAuthorizationWrite } from "./esun-authorizations";
 import { prepareSinopacAuthorizationWrite } from "./sinopac-authorizations";
 import { prepareObankTimeDepositWrite } from "./obank-time-deposits";
 import {
@@ -552,19 +553,20 @@ export async function syncEsun(
     );
   }
 
+  const authorizationStatements = await prepareEsunAuthorizationWrite(
+    env.DB,
+    records,
+  );
   const newRecords = await persistStagedSyncWrite(env.DB, {
     records,
-    afterPromoteStatements:
-      bankAccounts.length > 0
-        ? [
-            linkCanonicalBankAccountsStatement(env.DB),
-            ...reconcileEsunLifecycleShadowStatements(env.DB),
-            ...reconcileEsunSingleCardSummaryAccountStatements(env.DB),
-          ]
-        : [
-            ...reconcileEsunLifecycleShadowStatements(env.DB),
-            ...reconcileEsunSingleCardSummaryAccountStatements(env.DB),
-          ],
+    afterPromoteStatements: [
+      ...(bankAccounts.length > 0
+        ? [linkCanonicalBankAccountsStatement(env.DB)]
+        : []),
+      ...reconcileEsunLifecycleShadowStatements(env.DB),
+      ...reconcileEsunSingleCardSummaryAccountStatements(env.DB),
+      ...authorizationStatements,
+    ],
     finalizeStatements,
   });
 
@@ -2346,11 +2348,13 @@ export function isUserActionError(error: unknown) {
 
 export function safeErrorMessage(error: unknown) {
   const message = normalizeErrorText(
-    error instanceof Error
-      ? error.message
-      : error === null || error === undefined
-        ? ""
-        : String(error),
+    redactSensitiveText(
+      error instanceof Error
+        ? error.message
+        : error === null || error === undefined
+          ? ""
+          : String(error),
+    ),
     300,
   );
   return message || "同步失敗，但未取得錯誤原因。";
@@ -2401,6 +2405,12 @@ function normalizeErrorText(value: string, maxLength: number) {
 }
 
 function sanitizeErrorDiagnostic(value: string, maxLength: number) {
+  return redactSensitiveText(value).trim().slice(0, maxLength);
+}
+
+// Upstream error text can echo account identifiers or tokens; redact before it
+// reaches sync records, API responses, or logs.
+function redactSensitiveText(value: string) {
   return value
     .replace(/https?:\/\/\S+/gi, "[URL]")
     .replace(
@@ -2408,6 +2418,6 @@ function sanitizeErrorDiagnostic(value: string, maxLength: number) {
       "$1=[redacted]",
     )
     .replace(/\b(?:Bearer\s+)?[A-Za-z0-9+/_=-]{24,}\b/g, "[redacted]")
-    .trim()
-    .slice(0, maxLength);
+    .replace(/\b[A-Z][1289]\d{8}\b/g, "[redacted]")
+    .replace(/\b\d{10,}\b/g, "[redacted]");
 }
