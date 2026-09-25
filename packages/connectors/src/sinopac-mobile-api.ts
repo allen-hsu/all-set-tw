@@ -365,6 +365,15 @@ class SinopacLoginHttpSession {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
       } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "sinopac_http_request_failed",
+            endpoint: safeEndpoint(nextUrl),
+            method: nextInit.method ?? "GET",
+            errorName: safeErrorName(error),
+            message: safeTransportMessage(error),
+          }),
+        );
         throw new SinopacConnectionError("永豐銀行連線暫時無法完成。", error);
       }
       storeResponseCookies(this.cookies, response.headers);
@@ -555,4 +564,20 @@ function safeLoginMessage(message: string) {
 
 function safeErrorName(error: unknown) {
   return error instanceof Error ? error.name : "UNKNOWN_ERROR";
+}
+
+function safeEndpoint(value: string) {
+  try {
+    return new URL(value).pathname;
+  } catch {
+    return "unknown";
+  }
+}
+
+function safeTransportMessage(error: unknown) {
+  return (error instanceof Error ? error.message : String(error))
+    .replace(/https?:\/\/[^\s"'<>]+/gi, "[URL]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
 }
