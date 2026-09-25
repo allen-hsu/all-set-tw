@@ -334,7 +334,16 @@ class SinopacLoginHttpSession {
       }),
     );
     if (flagPayload.isLogin !== "Y" && flagPayload.isLogin !== "N") {
-      throw classifiedLoginError(flagPayload.message);
+      throw classifiedLoginError(
+        flagPayload.message,
+        [
+          `header=${flagPayload.header || "missing"}`,
+          `isLogin=${flagPayload.isLogin || "missing"}`,
+          `reason=${sinopacCredentialReason(flagPayload.message)}`,
+          `cookies=${this.cookies.has("ASP.NET_SessionId") ? "asp" : "no-asp"}+${this.cookies.has("sinopac_cookie") ? "sinopac" : "no-sinopac"}`,
+          `crypto=${encryptedUserCode.length}/${countCrlf(encryptedUserCode)}:${encryptedPassword.length}/${countCrlf(encryptedPassword)}`,
+        ].join(","),
+      );
     }
 
     const loginUrl = new URL(this.formAction, SINOPAC_ORIGIN);
@@ -511,13 +520,29 @@ function countCrlf(value: string) {
   return value.match(/\r\n/g)?.length ?? 0;
 }
 
-function classifiedLoginError(message: string): Error {
+function classifiedLoginError(message: string, diagnostic?: string): Error {
   const outcome = classifySinopacLoginMessage(message);
   if (outcome === "captcha") return new SinopacCaptchaRejectedError();
-  if (outcome === "credential") return new SinopacCredentialRejectedError();
+  if (outcome === "credential") {
+    return new SinopacCredentialRejectedError(
+      `永豐銀行拒絕登入，請確認身分證字號、使用者代碼與網路密碼${diagnostic ? `（${diagnostic}）` : "。"}`,
+    );
+  }
   return new SinopacVerificationRequiredError(
-    `永豐銀行登入失敗：${safeLoginMessage(message) || "請重新驗證"}`,
+    `永豐銀行登入失敗：${safeLoginMessage(message) || "請重新驗證"}${diagnostic ? `（${diagnostic}）` : ""}`,
   );
+}
+
+function sinopacCredentialReason(message: string) {
+  const normalized = message.replace(/\s+/g, " ");
+  if (/MemberNotActivated/i.test(normalized)) return "NOT_ACTIVATED";
+  if (/使用者代(?:碼|號).*(?:錯誤|有誤)/.test(normalized)) {
+    return "USER_CODE_ERROR";
+  }
+  if (/密碼.*(?:錯誤|有誤)/.test(normalized)) return "PASSWORD_ERROR";
+  if (/身分證.*(?:錯誤|有誤)/.test(normalized)) return "USER_ID_ERROR";
+  if (/帳號.*(?:錯誤|有誤)/.test(normalized)) return "ACCOUNT_ERROR";
+  return "CREDENTIAL_ERROR";
 }
 
 function isLoginPage(url: string, html: string) {
