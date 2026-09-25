@@ -31,6 +31,7 @@ function browserScenario(
   captchaRenderer: CaptchaRenderer = "legacy",
   submitButtonState: SubmitButtonState = "enabled",
   submissionError?: Error,
+  loginPageError?: string,
 ) {
   const listeners = new Map<string, Set<(value: unknown) => void>>();
   let submitCount = 0;
@@ -51,7 +52,7 @@ function browserScenario(
 
   const frame = {
     url: () => "https://ib.kgibank.com.tw/internalbank/",
-    $: vi.fn().mockResolvedValue({}),
+    $: vi.fn().mockResolvedValue(loginPageError ? null : {}),
     type: vi.fn().mockResolvedValue(undefined),
     waitForFunction: vi
       .fn()
@@ -161,7 +162,9 @@ function browserScenario(
             return { found: true, disabled: false, fields };
           }
           if (source.includes("innerText")) {
-            return currentOutcome === "captcha" ? "驗證碼有誤" : "";
+            return currentOutcome === "captcha"
+              ? "驗證碼有誤"
+              : (loginPageError ?? "");
           }
           const selectors = args.find(
             (value): value is { ionic: string; legacy: string } =>
@@ -268,6 +271,7 @@ describe("KGI Bank automatic CAPTCHA login", () => {
       6,
     );
     expect(result.bankAccounts).toHaveLength(1);
+    expect(scenario.page.setUserAgent).not.toHaveBeenCalled();
     expect(scenario.frame.type).not.toHaveBeenCalled();
     expect(scenario.frame.evaluate).toHaveBeenCalledWith(
       expect.any(Function),
@@ -431,6 +435,24 @@ describe("KGI Bank automatic CAPTCHA login", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reports an unsupported browser page instead of timing out on the login selector", async () => {
+    const scenario = browserScenario(
+      ["unknown"],
+      "legacy",
+      "enabled",
+      undefined,
+      "瀏覽器不支援",
+    );
+    puppeteerMock.launch.mockResolvedValue(scenario.browser);
+    const recognize = vi.fn().mockResolvedValue("123456");
+
+    await expect(
+      createKgibankConnector({} as Fetcher, recognize).sync(credentials),
+    ).rejects.toThrow("不支援目前的瀏覽器版本");
+
+    expect(recognize).not.toHaveBeenCalled();
   });
 
   it.each([
