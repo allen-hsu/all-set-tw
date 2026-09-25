@@ -42,8 +42,6 @@ const CAPTCHA_SELECTORS = {
   ionic: "ion-img.recaptcha-image",
   legacy: 'img[src^="data:image"]',
 };
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /** 只轉送 API 需要的 header；其餘由瀏覽器自行帶入。 */
 const FORWARDED_HEADERS = [
@@ -730,6 +728,14 @@ async function findLoginFrame(page: Page): Promise<Frame> {
         .then(Boolean)
         .catch(() => false);
       if (ready) return frame;
+      const pageText = await readFrameText(frame);
+      if (
+        /瀏覽器不支援|unsupported browser|browser is not supported/i.test(
+          pageText,
+        )
+      ) {
+        throw new KgibankConnectionError("凱基網銀不支援目前的瀏覽器版本。");
+      }
     }
     await delay(LOGIN_RESULT_POLL_MS);
   }
@@ -869,7 +875,6 @@ async function acquireBrowser(
 
 async function configurePage(page: Page) {
   await page.setViewport({ width: 1280, height: 800 });
-  await page.setUserAgent(USER_AGENT);
   page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
 }
 
