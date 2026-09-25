@@ -119,7 +119,10 @@ function sinopacHttpFetch(
     if (url.includes("m_login.aspx") && method === "POST") {
       if (options.rejectCaptcha) {
         return new Response(
-          `<form id="m_login"></form><script>alert("驗證碼錯誤")</script>`,
+          `<form id="m_login"></form><script>
+            const passwordErrorTemplate = "密碼錯誤";
+            alert("驗證碼錯誤");
+          </script>`,
           { headers: { "Content-Type": "text/html" } },
         );
       }
