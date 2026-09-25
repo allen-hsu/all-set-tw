@@ -75,60 +75,63 @@ function sinopacHttpFetch(
 ) {
   const certificatePem = TEST_LOGIN_CERTIFICATE;
   const calls: Array<{ url: string; init?: RequestInit }> = [];
-  const fetcher = vi.fn(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      calls.push({ url, init });
-      const method = init?.method ?? "GET";
-      if (url.includes("m_login.aspx") && method === "GET") {
-        return new Response(loginPage(certificatePem), {
-          headers: {
-            "Content-Type": "text/html",
-            "Set-Cookie": "ASP.NET_SessionId=pending; Path=/; Secure; HttpOnly",
-          },
-        });
-      }
-      if (url.includes("ValidateNumber.ashx")) {
-        return new Response(new Uint8Array([1, 2, 3]), {
-          headers: { "Content-Type": "image/jpeg" },
-        });
-      }
-      if (url.includes("ws_loginflag.ashx")) {
+  const fetcher = vi.fn(async function (
+    this: unknown,
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) {
+    expect(this).toBe(globalThis);
+    const url = String(input);
+    calls.push({ url, init });
+    const method = init?.method ?? "GET";
+    if (url.includes("m_login.aspx") && method === "GET") {
+      return new Response(loginPage(certificatePem), {
+        headers: {
+          "Content-Type": "text/html",
+          "Set-Cookie": "ASP.NET_SessionId=pending; Path=/; Secure; HttpOnly",
+        },
+      });
+    }
+    if (url.includes("ValidateNumber.ashx")) {
+      return new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "Content-Type": "image/jpeg" },
+      });
+    }
+    if (url.includes("ws_loginflag.ashx")) {
+      return new Response(
+        JSON.stringify([
+          options.loginFlagMessage
+            ? { Header: "FAIL", Message: options.loginFlagMessage }
+            : { Header: "SUCCESS", IsLogin: "N", Message: "" },
+        ]),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (url.includes("m_login.aspx") && method === "POST") {
+      if (options.rejectCaptcha) {
         return new Response(
-          JSON.stringify([
-            options.loginFlagMessage
-              ? { Header: "FAIL", Message: options.loginFlagMessage }
-              : { Header: "SUCCESS", IsLogin: "N", Message: "" },
-          ]),
-          { headers: { "Content-Type": "application/json" } },
+          `<form id="m_login"></form><script>alert("驗證碼錯誤")</script>`,
+          { headers: { "Content-Type": "text/html" } },
         );
       }
-      if (url.includes("m_login.aspx") && method === "POST") {
-        if (options.rejectCaptcha) {
-          return new Response(
-            `<form id="m_login"></form><script>alert("驗證碼錯誤")</script>`,
-            { headers: { "Content-Type": "text/html" } },
-          );
-        }
-        return new Response(null, {
-          status: options.externalRedirect ? 307 : 302,
-          headers: {
-            Location: options.externalRedirect
-              ? "https://example.test/capture"
-              : "/m/m_home.aspx",
-            "Set-Cookie":
-              "sinopac_cookie=authenticated; Path=/; Secure; HttpOnly",
-          },
-        });
-      }
-      if (url.endsWith("/m/m_home.aspx")) {
-        return new Response("<main>home</main>", {
-          headers: { "Content-Type": "text/html" },
-        });
-      }
-      throw new Error(`Unexpected request: ${method} ${url}`);
-    },
-  );
+      return new Response(null, {
+        status: options.externalRedirect ? 307 : 302,
+        headers: {
+          Location: options.externalRedirect
+            ? "https://example.test/capture"
+            : "/m/m_home.aspx",
+          "Set-Cookie":
+            "sinopac_cookie=authenticated; Path=/; Secure; HttpOnly",
+        },
+      });
+    }
+    if (url.endsWith("/m/m_home.aspx")) {
+      return new Response("<main>home</main>", {
+        headers: { "Content-Type": "text/html" },
+      });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  });
   return { calls, fetcher, certificatePem };
 }
 
