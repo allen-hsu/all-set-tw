@@ -209,6 +209,9 @@ function browserScenario(
       ),
   };
   const page = {
+    evaluate: vi
+      .fn()
+      .mockResolvedValue("Mozilla/5.0 HeadlessChrome/128.0.0.0 Safari/537.36"),
     frames: vi.fn().mockReturnValue([frame]),
     goto: vi.fn().mockResolvedValue(undefined),
     on: vi
@@ -271,7 +274,9 @@ describe("KGI Bank automatic CAPTCHA login", () => {
       6,
     );
     expect(result.bankAccounts).toHaveLength(1);
-    expect(scenario.page.setUserAgent).not.toHaveBeenCalled();
+    expect(scenario.page.setUserAgent).toHaveBeenCalledWith(
+      "Mozilla/5.0 Chrome/128.0.0.0 Safari/537.36",
+    );
     expect(scenario.frame.type).not.toHaveBeenCalled();
     expect(scenario.frame.evaluate).toHaveBeenCalledWith(
       expect.any(Function),
