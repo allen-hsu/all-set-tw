@@ -276,6 +276,12 @@ describe("sinopac HTTP login lifecycle", () => {
       url.includes("ws_loginflag.ashx"),
     );
     const flagBody = new URLSearchParams(String(loginFlag?.init?.body));
+    expect(new Headers(loginFlag?.init?.headers).get("content-type")).toBe(
+      "application/x-www-form-urlencoded; charset=UTF-8",
+    );
+    expect(new Headers(loginFlag?.init?.headers).get("x-requested-with")).toBe(
+      "XMLHttpRequest",
+    );
     expect(flagBody.get("CustId")).toBe(credentials.userId);
     expect(flagBody.get("UserCode")).not.toBe(credentials.account);
     expect(flagBody.get("UserCode")).toMatch(/\r\n$/);
@@ -292,6 +298,12 @@ describe("sinopac HTTP login lifecycle", () => {
         url.includes("m_login.aspx") && init?.method === "POST",
     );
     const loginBody = new URLSearchParams(String(loginPost?.init?.body));
+    expect(new Headers(loginPost?.init?.headers).get("content-type")).toBe(
+      "application/x-www-form-urlencoded",
+    );
+    expect(new Headers(loginPost?.init?.headers).has("x-requested-with")).toBe(
+      false,
+    );
     expect([...loginBody.keys()].sort()).toEqual(
       [
         "CheckValidateNumber",

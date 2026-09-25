@@ -367,14 +367,19 @@ class SinopacLoginHttpSession {
   }
 
   private postForm(url: string, fields: Record<string, string>) {
+    const isPrecheck = url === LOGIN_FLAG_URL;
     return this.request(url, {
       method: "POST",
       headers: {
-        Accept: "text/html,application/json,*/*;q=0.8",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        Accept: isPrecheck
+          ? "application/json, text/javascript, */*; q=0.01"
+          : "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Content-Type": isPrecheck
+          ? "application/x-www-form-urlencoded; charset=UTF-8"
+          : "application/x-www-form-urlencoded",
         Origin: SINOPAC_ORIGIN,
         Referer: LOGIN_REFERER,
-        "X-Requested-With": url === LOGIN_FLAG_URL ? "XMLHttpRequest" : "",
+        "X-Requested-With": isPrecheck ? "XMLHttpRequest" : "",
       },
       body: new URLSearchParams(fields).toString(),
     });
