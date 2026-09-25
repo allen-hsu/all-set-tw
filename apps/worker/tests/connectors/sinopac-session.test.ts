@@ -270,9 +270,15 @@ describe("sinopac HTTP login lifecycle", () => {
     const flagBody = new URLSearchParams(String(loginFlag?.init?.body));
     expect(flagBody.get("CustId")).toBe(credentials.userId);
     expect(flagBody.get("UserCode")).not.toBe(credentials.account);
-    expect(flagBody.get("UserCode")).toMatch(/^[A-Za-z0-9+/=]+$/);
+    expect(flagBody.get("UserCode")).toMatch(/\r\n$/);
+    expect(flagBody.get("UserCode")?.replace(/\r\n/g, "")).toMatch(
+      /^[A-Za-z0-9+/=]+$/,
+    );
     expect(flagBody.get("UserPWD")).not.toContain(credentials.password);
-    expect(flagBody.get("UserPWD")).toMatch(/^[A-Za-z0-9+/=]+$/);
+    expect(flagBody.get("UserPWD")).toMatch(/\r\n$/);
+    expect(flagBody.get("UserPWD")?.replace(/\r\n/g, "")).toMatch(
+      /^[A-Za-z0-9+/=]+$/,
+    );
     const loginPost = http.calls.find(
       ({ url, init }) =>
         url.includes("m_login.aspx") && init?.method === "POST",

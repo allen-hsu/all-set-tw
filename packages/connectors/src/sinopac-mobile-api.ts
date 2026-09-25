@@ -169,10 +169,8 @@ export function encryptSinopacCredential(
     const pem = forge.pkcs7.messageToPem(
       message as unknown as Parameters<typeof forge.pkcs7.messageToPem>[0],
     );
-    return pem
-      .replace(/-----BEGIN PKCS7-----/g, "")
-      .replace(/-----END PKCS7-----/g, "")
-      .replace(/\s+/g, "");
+    const lines = pem.trim().split(/\r?\n/);
+    return `${lines.slice(1, -1).join("\r\n")}\r\n`;
   } catch (error) {
     throw new SinopacProtocolError(
       `永豐登入憑證無法處理：${safeErrorName(error)}。`,
