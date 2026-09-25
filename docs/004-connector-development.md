@@ -20,14 +20,14 @@ Connector 採三層 registry：
 
 新增 connector 前先選擇最接近的連接模式：
 
-| Mode                      | 適用情境                                                 | 現有範例                         |
-| ------------------------- | -------------------------------------------------------- | -------------------------------- |
-| `api_credentials`         | 帳密登入外部 API，可自行更新 token                       | 電子發票、中信、新光             |
-| `api_captcha_session`     | App API 登入含 CAPTCHA，challenge 僅短暫加密保存         | 王道銀行                         |
-| `api_device_otp`          | API 登入，首次裝置需要 OTP                               | 集保 e 存摺                      |
-| `browser_per_sync`        | 每次同步都必須以 Browser 登入與擷取                      | 國泰世華                         |
-| `browser_session`         | Browser 只負責登入，後續使用可復用的 HTTP session        | 玉山                             |
-| `browser_captcha_session` | Browser 登入含 CAPTCHA，可由 AI 或人工完成並復用 session | 永豐、台新、華南、第一銀行、凱基 |
+| Mode                      | 適用情境                                                 | 現有範例                   |
+| ------------------------- | -------------------------------------------------------- | -------------------------- |
+| `api_credentials`         | 帳密登入外部 API，可自行更新 token                       | 電子發票、中信、新光       |
+| `api_captcha_session`     | API 登入含 CAPTCHA，challenge 僅短暫加密保存             | 王道銀行、永豐銀行         |
+| `api_device_otp`          | API 登入，首次裝置需要 OTP                               | 集保 e 存摺                |
+| `browser_per_sync`        | 每次同步都必須以 Browser 登入與擷取                      | 國泰世華                   |
+| `browser_session`         | Browser 只負責登入，後續使用可復用的 HTTP session        | 玉山                       |
+| `browser_captcha_session` | Browser 登入含 CAPTCHA，可由 AI 或人工完成並復用 session | 台新、華南、第一銀行、凱基 |
 
 不要為單一銀行建立新的通用框架。只有登入生命週期真的不同時才新增 mode，並同時補上 catalog 說明及共同測試。
 
@@ -234,6 +234,13 @@ Migration `0043_merge_legacy_invoice_duplicates.sql` 以相同發票號碼整併
 同日多筆同額消費可能對調刷卡時間，但筆數與金額正確；找不到明細的授權照常顯示。
 
 ### 永豐銀行
+
+永豐登入不使用 Browser Run。Connector 先以 HTTP 取得行動網銀登入頁、ASP.NET
+session、動態憑證與 server time，再用銀行前端相同的 PKCS#7 enveloped-data
+演算法加密 `password + server time`。CAPTCHA 圖片與登入 POST 必須沿用同一組
+cookie；待驗證 session 加密保存且兩分鐘後失效。排程預設由 Workers AI 辨識，人工
+challenge 使用相同 HTTP session，不得建立 Browser Run session。登入成功後沿用既有
+App JSON API session；帳密明確遭拒時不得自動重送，只有 CAPTCHA 錯誤可換圖重試。
 
 #### 信用卡帳單與餘額
 

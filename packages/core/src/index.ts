@@ -438,7 +438,7 @@ export const connectorCatalog = {
     id: "sinopac",
     title: "永豐行動銀行",
     description: "信用卡帳務、近期帳單與消費",
-    connectionMode: "browser_captcha_session",
+    connectionMode: "api_captcha_session",
     scopes: ["all"],
     capabilities: [
       "bank_account",
@@ -448,13 +448,21 @@ export const connectorCatalog = {
     ],
     publicFields: [],
     credentialFields: ["userId", "account", "password"],
-    secretStateFields: ["sessionCookies", "browserSessionId", "captcha"],
+    secretStateFields: [
+      "sessionCookies",
+      "pendingSession",
+      "pendingSessionExpiresAt",
+      "captcha",
+    ],
     resetOnCredentialChangeFields: [
       "sessionCookies",
       "candidateSessionCookies",
       "candidateSessionCreatedAt",
       "sessionExpiresAt",
       "sessionKeepAliveFailures",
+      "pendingSession",
+      "pendingSessionExpiresAt",
+      // Remove legacy Browser Run challenges when credentials change.
       "browserSessionId",
       "browserSessionExpiresAt",
       "captcha",

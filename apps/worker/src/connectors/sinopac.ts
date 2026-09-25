@@ -14,7 +14,16 @@ import type {
 } from "@taiwan-fin-hub/core";
 import {
   BANK_SYNC_MONTHS,
+  completeSinopacHttpLogin,
+  prepareSinopacHttpCaptcha,
+  SINOPAC_CAPTCHA_DIGIT_COUNT,
+  SINOPAC_HTTP_USER_AGENT,
+  SINOPAC_SESSION_PROTOCOL,
+  SinopacCaptchaRejectedError,
+  SinopacCredentialRejectedError,
+  SinopacVerificationRequiredError,
   type SinopacConfig,
+  type SinopacFetch,
 } from "@taiwan-fin-hub/connectors";
 
 const MOBILE_HOST = "https://m.sinopac.com";
@@ -26,13 +35,9 @@ const CARD_AUTH_PATH = "/m/SinoCard/api/security/auth";
 const CARD_LATEST_TX_PATH = "/m/SinoCard/api/Accounting/LatestTx";
 const CARD_OUTSTANDING_DETAIL_PATH =
   "/m/SinoCard/api/Accounting/OutstandingDetail";
-export const SINOPAC_SESSION_PROTOCOL = "sinopac-mobile-app-json-v1";
 export const SINOPAC_AUTO_LOGIN_ATTEMPTS = 3;
 const CAPTCHA_BROWSER_KEEP_ALIVE_MS = 150_000;
 const CAPTCHA_VALIDITY_MS = 120_000;
-const ANDROID_USER_AGENT =
-  "Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/UP1A.231105.003) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
 
 type JsonRecord = Record<string, unknown>;
 type FetchImpl = typeof fetch;
@@ -54,26 +59,12 @@ type Scraped = {
   creditCardBills: Array<Omit<CreditCardBill, "id" | "connectorId">>;
 };
 
-export class SinopacVerificationRequiredError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SinopacVerificationRequiredError";
-  }
-}
-
-export class SinopacCaptchaRejectedError extends SinopacVerificationRequiredError {
-  constructor(message: string) {
-    super(message);
-    this.name = "SinopacCaptchaRejectedError";
-  }
-}
-
-export class SinopacCredentialRejectedError extends SinopacVerificationRequiredError {
-  constructor(message: string) {
-    super(message);
-    this.name = "SinopacCredentialRejectedError";
-  }
-}
+export {
+  SINOPAC_SESSION_PROTOCOL,
+  SinopacCaptchaRejectedError,
+  SinopacCredentialRejectedError,
+  SinopacVerificationRequiredError,
+};
 
 export class SinopacBrowserCapacityError extends Error {
   constructor(
@@ -85,10 +76,7 @@ export class SinopacBrowserCapacityError extends Error {
   }
 }
 
-export function createSinopacConnector(
-  browser?: Fetcher,
-  fetchImpl: FetchImpl = fetch,
-) {
+export function createSinopacConnector(fetchImpl: FetchImpl = fetch) {
   return {
     id: "sinopac" as const,
     name: "永豐銀行行動銀行",
@@ -101,46 +89,16 @@ export function createSinopacConnector(
         Pick<Scraped, "pendingSnapshotComplete" | "cardAuthorizations">
     > {
       let sessionCookies = config.sessionCookies;
-      let browserInstance: Browser | undefined;
       let verifiedThisRun = false;
 
-      if (config.browserSessionId && config.captcha) {
-        if (!browser) throw new Error("永豐首次驗證需要 BROWSER binding。");
-        if (
-          !config.browserSessionExpiresAt ||
-          new Date(config.browserSessionExpiresAt) <= new Date()
-        ) {
-          throw new SinopacVerificationRequiredError(
-            "永豐圖形驗證碼已逾時，請重新取得驗證碼。",
-          );
-        }
-        try {
-          browserInstance = await puppeteer.connect(
-            browser,
-            config.browserSessionId,
-          );
-        } catch {
-          throw new SinopacVerificationRequiredError(
-            "永豐登入工作階段已失效，請重新取得圖形驗證碼。",
-          );
-        }
-        try {
-          const pages = await browserInstance.pages();
-          const page =
-            pages.find((candidate) =>
-              candidate.url().includes("/m/member/login/m_login.aspx"),
-            ) ?? pages[0];
-          if (!page) {
-            throw new SinopacVerificationRequiredError(
-              "永豐登入工作階段沒有可用頁面，請重新取得圖形驗證碼。",
-            );
-          }
-          await submitLogin(page, config.captcha);
-          sessionCookies = JSON.stringify(await page.cookies());
-          verifiedThisRun = true;
-        } finally {
-          await browserInstance.close();
-        }
+      if (config.pendingSession && config.captcha) {
+        const login = await completeSinopacHttpLogin(
+          config,
+          config.captcha,
+          fetchImpl as SinopacFetch,
+        );
+        sessionCookies = login.sessionCookies;
+        verifiedThisRun = true;
       }
 
       if (!sessionCookies) {
@@ -265,7 +223,7 @@ class SinopacAppClient {
           "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
           Cookie: this.cookieHeader,
           Referer: `${MOBILE_HOST}/m/m_home.aspx`,
-          "User-Agent": ANDROID_USER_AGENT,
+          "User-Agent": SINOPAC_HTTP_USER_AGENT,
           "X-Requested-With": "XMLHttpRequest",
         },
         body: "",
@@ -307,7 +265,7 @@ class SinopacAppClient {
           "Content-Type": "application/json",
           Cookie: cookieHeaderFromMap(this.sinoCardCookies),
           Referer: `${MOBILE_HOST}/m/SinoCard/Account/UnbilledTxInquiry`,
-          "User-Agent": ANDROID_USER_AGENT,
+          "User-Agent": SINOPAC_HTTP_USER_AGENT,
         },
         body: JSON.stringify({
           Content: content,
@@ -349,6 +307,53 @@ class SinopacAppClient {
   }
 }
 
+export function prepareSinopacApiCaptcha(
+  config: SinopacConfig,
+  fetchImpl: FetchImpl = fetch,
+) {
+  return prepareSinopacHttpCaptcha(config, fetchImpl as SinopacFetch);
+}
+
+export async function loginSinopacWithHttpOcr(
+  config: SinopacConfig,
+  recognizeCaptcha: (imageBytes: ArrayBuffer) => Promise<string>,
+  fetchImpl: FetchImpl = fetch,
+) {
+  for (let attempt = 1; attempt <= SINOPAC_AUTO_LOGIN_ATTEMPTS; attempt += 1) {
+    const prepared = await prepareSinopacHttpCaptcha(
+      config,
+      fetchImpl as SinopacFetch,
+    );
+    let captcha: string;
+    try {
+      captcha = await recognizeCaptcha(prepared.imageBytes);
+    } catch {
+      continue;
+    }
+    if (!new RegExp(`^\\d{${SINOPAC_CAPTCHA_DIGIT_COUNT}}$`).test(captcha)) {
+      continue;
+    }
+    try {
+      return await completeSinopacHttpLogin(
+        {
+          ...config,
+          pendingSession: prepared.pendingSession,
+          pendingSessionExpiresAt: prepared.pendingSessionExpiresAt,
+        },
+        captcha,
+        fetchImpl as SinopacFetch,
+      );
+    } catch (error) {
+      if (error instanceof SinopacCaptchaRejectedError) continue;
+      throw error;
+    }
+  }
+  throw new SinopacVerificationRequiredError(
+    `永豐自動驗證連續失敗 ${SINOPAC_AUTO_LOGIN_ATTEMPTS} 次，請改用人工驗證。`,
+  );
+}
+
+/** Browser Run fallback retained for manual recovery during the HTTP rollout. */
 export async function prepareSinopacCaptcha(
   browser: Fetcher | undefined,
   config: SinopacConfig,
@@ -538,7 +543,7 @@ async function launchBrowser(
 
 async function configurePage(page: Page) {
   await page.setViewport({ width: 390, height: 844, isMobile: true });
-  await page.setUserAgent(ANDROID_USER_AGENT);
+  await page.setUserAgent(SINOPAC_HTTP_USER_AGENT);
 }
 
 async function openLoginAndFill(page: Page, config: SinopacConfig) {
