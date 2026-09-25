@@ -453,7 +453,8 @@ function parseLoginPage(html: string) {
     throw new SinopacProtocolError("永豐登入頁缺少加密憑證或表單資訊。");
   }
   const hiddenFields: Record<string, string> = {};
-  for (const input of parseInputs(formMatch[0])) {
+  const submittedFormHtml = formMatch[0].replace(/<!--[\s\S]*?-->/g, "");
+  for (const input of parseInputs(submittedFormHtml)) {
     if (input.name) {
       hiddenFields[input.name] = input.value;
     }
