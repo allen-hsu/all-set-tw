@@ -85,7 +85,7 @@ import { sinopacConfigSchema } from "./sinopac";
 export {
   classifySinopacLoginMessage,
   completeSinopacHttpLogin,
-  encryptSinopacPassword,
+  encryptSinopacCredential,
   prepareSinopacHttpCaptcha,
   requireSinopacCredentials,
   SINOPAC_CAPTCHA_DIGIT_COUNT,
