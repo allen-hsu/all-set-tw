@@ -201,6 +201,34 @@ beforeEach(() => {
 });
 
 describe("sinopac HTTP login lifecycle", () => {
+  it("logs only safe transport metadata when the first HTTP request fails", async () => {
+    const errorLog = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const fetcher = vi
+      .fn()
+      .mockRejectedValue(
+        new TypeError(
+          "network failed for https://m.sinopac.com/private?password=secret",
+        ),
+      );
+
+    try {
+      await expect(
+        prepareSinopacHttpCaptcha(credentials, fetcher),
+      ).rejects.toThrow("連線暫時無法完成");
+
+      const logged = String(errorLog.mock.calls[0]?.[0]);
+      expect(logged).toContain('"event":"sinopac_http_request_failed"');
+      expect(logged).toContain('"endpoint":"/m/member/login/m_login.aspx"');
+      expect(logged).toContain('"errorName":"TypeError"');
+      expect(logged).not.toContain("password=secret");
+      expect(logged).not.toContain("m.sinopac.com");
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
   it("prepares and completes a CAPTCHA login without acquiring Browser Run", async () => {
     const http = sinopacHttpFetch();
     const prepared = await prepareSinopacHttpCaptcha(credentials, http.fetcher);
