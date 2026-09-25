@@ -356,7 +356,12 @@ describe("sinopac HTTP login lifecycle", () => {
 
     await expect(
       loginSinopacWithHttpOcr(credentials, recognize, http.fetcher),
-    ).rejects.toBeInstanceOf(SinopacCredentialRejectedError);
+    ).rejects.toMatchObject({
+      name: SinopacCredentialRejectedError.name,
+      message: expect.stringContaining(
+        "header=FAIL,isLogin=missing,reason=PASSWORD_ERROR,cookies=asp+no-sinopac",
+      ),
+    });
 
     expect(recognize).toHaveBeenCalledOnce();
     expect(
