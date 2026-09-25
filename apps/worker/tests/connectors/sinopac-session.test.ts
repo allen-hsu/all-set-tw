@@ -58,11 +58,19 @@ const TEST_LOGIN_CERTIFICATE = createLoginCertificate();
 
 function loginPage(certificatePem: string) {
   return `<!doctype html>
+    <input name="dynamicCert" type="hidden" id="dynamic_hiddenCert" value="${certificatePem}" />
+    <input name="dynamicTime" type="hidden" id="dynamic_hiddenServerTime" value="2026-09-25 12:00:00" />
     <form method="post" id="m_login" action="/m/member/login/m_login.aspx">
-      <input name="dynamicCert" type="hidden" id="dynamic_hiddenCert" value="${certificatePem}" />
-      <input name="dynamicTime" type="hidden" id="dynamic_hiddenServerTime" value="2026-09-25 12:00:00" />
+      <input name="dynamicUserId" type="text" value="" />
+      <input name="dynamicUserCode" type="password" value="" />
+      <input name="dynamicPassword" type="password" value="" />
+      <input name="CheckValidateNumber" type="text" value="" />
       <input type="hidden" name="LoginWeb" value="Mobile" />
+      <input type="hidden" name="CustId" value="" />
+      <input type="hidden" name="UserCode" value="" />
+      <input type="hidden" name="UserPWD" value="" />
       <input type="hidden" name="source" value="MWeb" />
+      <input type="hidden" name="pushEnabler" value="" />
     </form>`;
 }
 
@@ -284,6 +292,25 @@ describe("sinopac HTTP login lifecycle", () => {
         url.includes("m_login.aspx") && init?.method === "POST",
     );
     const loginBody = new URLSearchParams(String(loginPost?.init?.body));
+    expect([...loginBody.keys()].sort()).toEqual(
+      [
+        "CheckValidateNumber",
+        "CustId",
+        "LoginWeb",
+        "UserCode",
+        "UserPWD",
+        "dynamicPassword",
+        "dynamicUserCode",
+        "dynamicUserId",
+        "pushEnabler",
+        "source",
+      ].sort(),
+    );
+    expect(loginBody.has("dynamicCert")).toBe(false);
+    expect(loginBody.has("dynamicTime")).toBe(false);
+    expect(loginBody.get("dynamicUserId")).toBe("");
+    expect(loginBody.get("dynamicUserCode")).toBe("");
+    expect(loginBody.get("dynamicPassword")).toBe("");
     expect(loginBody.get("UserCode")).not.toBe(credentials.account);
     expect(loginBody.get("UserPWD")).not.toBe(credentials.password);
     expect(loginBody.get("CheckValidateNumber")).toBe("575831");
