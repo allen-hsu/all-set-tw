@@ -152,7 +152,7 @@ export async function completeSinopacHttpLogin(
   };
 }
 
-export function encryptSinopacPassword(
+export function encryptSinopacCredential(
   certificatePem: string,
   password: string,
   serverTime: string,
@@ -294,14 +294,19 @@ class SinopacLoginHttpSession {
   }
 
   async login(credentials: SinopacCredentials, captcha: string) {
-    const encryptedPassword = encryptSinopacPassword(
+    const encryptedUserCode = encryptSinopacCredential(
+      this.certificatePem,
+      credentials.account,
+      this.serverTime,
+    );
+    const encryptedPassword = encryptSinopacCredential(
       this.certificatePem,
       credentials.password,
       this.serverTime,
     );
     const loginFlag = await this.postForm(LOGIN_FLAG_URL, {
       CustId: credentials.userId,
-      UserCode: credentials.account,
+      UserCode: encryptedUserCode,
       UserPWD: encryptedPassword,
       source: "MWeb",
     });
@@ -318,7 +323,7 @@ class SinopacLoginHttpSession {
       ...this.hiddenFields,
       LoginWeb: "Mobile",
       CustId: credentials.userId,
-      UserCode: credentials.account,
+      UserCode: encryptedUserCode,
       UserPWD: encryptedPassword,
       source: "MWeb",
       pushEnabler: "",
