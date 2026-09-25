@@ -437,22 +437,19 @@ class SinopacLoginHttpSession {
 }
 
 function parseLoginPage(html: string) {
-  const inputs = parseInputs(html);
-  const certificatePem = findInputValue(inputs, "hiddenCert");
-  const serverTime = findInputValue(inputs, "hiddenServerTime");
-  const formAction =
-    html.match(
-      /<form\b[^>]*\bid=["']m_login["'][^>]*\baction=["']([^"']+)["']/i,
-    )?.[1] ??
-    html.match(
-      /<form\b[^>]*\baction=["']([^"']+)["'][^>]*\bid=["']m_login["']/i,
-    )?.[1];
-  if (!certificatePem || !serverTime || !formAction) {
+  const pageInputs = parseInputs(html);
+  const certificatePem = findInputValue(pageInputs, "hiddenCert");
+  const serverTime = findInputValue(pageInputs, "hiddenServerTime");
+  const formMatch = html.match(
+    /(<form\b(?=[^>]*\bid=["']m_login["'])[^>]*>)[\s\S]*?<\/form>/i,
+  );
+  const formAction = formMatch?.[1].match(/\baction=["']([^"']+)["']/i)?.[1];
+  if (!certificatePem || !serverTime || !formAction || !formMatch) {
     throw new SinopacProtocolError("永豐登入頁缺少加密憑證或表單資訊。");
   }
   const hiddenFields: Record<string, string> = {};
-  for (const input of inputs) {
-    if (input.type.toLowerCase() === "hidden" && input.name) {
+  for (const input of parseInputs(formMatch[0])) {
+    if (input.name) {
       hiddenFields[input.name] = input.value;
     }
   }
