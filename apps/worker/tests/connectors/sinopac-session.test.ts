@@ -1,4 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import forge from "node-forge";
+import {
+  completeSinopacHttpLogin,
+  prepareSinopacHttpCaptcha,
+  SinopacCaptchaRejectedError,
+  SinopacProtocolError,
+} from "@taiwan-fin-hub/connectors";
 
 const puppeteerMock = vi.hoisted(() => ({
   connect: vi.fn(),
@@ -19,6 +26,7 @@ vi.mock("jpeg-js", () => jpegMock);
 
 import {
   createSinopacConnector,
+  loginSinopacWithHttpOcr,
   loginSinopacWithOcr,
   prepareSinopacCaptcha,
   SinopacBrowserCapacityError,
@@ -31,6 +39,98 @@ const credentials = {
   account: "test-user",
   password: "test-password",
 };
+
+function createLoginCertificate() {
+  const keys = forge.pki.rsa.generateKeyPair(512);
+  const certificate = forge.pki.createCertificate();
+  certificate.publicKey = keys.publicKey;
+  certificate.serialNumber = "01";
+  certificate.validity.notBefore = new Date("2020-01-01T00:00:00Z");
+  certificate.validity.notAfter = new Date("2030-01-01T00:00:00Z");
+  const attributes = [{ name: "commonName", value: "sinopac.test" }];
+  certificate.setSubject(attributes);
+  certificate.setIssuer(attributes);
+  certificate.sign(keys.privateKey, forge.md.sha256.create());
+  return forge.pki.certificateToPem(certificate);
+}
+
+const TEST_LOGIN_CERTIFICATE = createLoginCertificate();
+
+function loginPage(certificatePem: string) {
+  return `<!doctype html>
+    <form method="post" id="m_login" action="/m/member/login/m_login.aspx">
+      <input name="dynamicCert" type="hidden" id="dynamic_hiddenCert" value="${certificatePem}" />
+      <input name="dynamicTime" type="hidden" id="dynamic_hiddenServerTime" value="2026-09-25 12:00:00" />
+      <input type="hidden" name="LoginWeb" value="Mobile" />
+      <input type="hidden" name="source" value="MWeb" />
+    </form>`;
+}
+
+function sinopacHttpFetch(
+  options: {
+    rejectCaptcha?: boolean;
+    loginFlagMessage?: string;
+    externalRedirect?: boolean;
+  } = {},
+) {
+  const certificatePem = TEST_LOGIN_CERTIFICATE;
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const fetcher = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      const method = init?.method ?? "GET";
+      if (url.includes("m_login.aspx") && method === "GET") {
+        return new Response(loginPage(certificatePem), {
+          headers: {
+            "Content-Type": "text/html",
+            "Set-Cookie": "ASP.NET_SessionId=pending; Path=/; Secure; HttpOnly",
+          },
+        });
+      }
+      if (url.includes("ValidateNumber.ashx")) {
+        return new Response(new Uint8Array([1, 2, 3]), {
+          headers: { "Content-Type": "image/jpeg" },
+        });
+      }
+      if (url.includes("ws_loginflag.ashx")) {
+        return new Response(
+          JSON.stringify([
+            options.loginFlagMessage
+              ? { Header: "FAIL", Message: options.loginFlagMessage }
+              : { Header: "SUCCESS", IsLogin: "N", Message: "" },
+          ]),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("m_login.aspx") && method === "POST") {
+        if (options.rejectCaptcha) {
+          return new Response(
+            `<form id="m_login"></form><script>alert("驗證碼錯誤")</script>`,
+            { headers: { "Content-Type": "text/html" } },
+          );
+        }
+        return new Response(null, {
+          status: options.externalRedirect ? 307 : 302,
+          headers: {
+            Location: options.externalRedirect
+              ? "https://example.test/capture"
+              : "/m/m_home.aspx",
+            "Set-Cookie":
+              "sinopac_cookie=authenticated; Path=/; Secure; HttpOnly",
+          },
+        });
+      }
+      if (url.endsWith("/m/m_home.aspx")) {
+        return new Response("<main>home</main>", {
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    },
+  );
+  return { calls, fetcher, certificatePem };
+}
 
 function captchaPage() {
   return {
@@ -100,10 +200,156 @@ beforeEach(() => {
   });
 });
 
+describe("sinopac HTTP login lifecycle", () => {
+  it("prepares and completes a CAPTCHA login without acquiring Browser Run", async () => {
+    const http = sinopacHttpFetch();
+    const prepared = await prepareSinopacHttpCaptcha(credentials, http.fetcher);
+
+    expect(prepared.captchaImage).toBe("data:image/jpeg;base64,AQID");
+    expect(prepared.captchaDigitCount).toBe(6);
+    expect(prepared.pendingSession).not.toContain(credentials.userId);
+    expect(prepared.pendingSession).not.toContain(credentials.password);
+
+    const result = await completeSinopacHttpLogin(
+      {
+        ...credentials,
+        pendingSession: prepared.pendingSession,
+        pendingSessionExpiresAt: prepared.pendingSessionExpiresAt,
+      },
+      "575831",
+      http.fetcher,
+    );
+
+    expect(result.protocol).toBe("sinopac-mobile-app-json-v1");
+    expect(JSON.parse(result.sessionCookies)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "ASP.NET_SessionId",
+          value: "pending",
+        }),
+        expect.objectContaining({
+          name: "sinopac_cookie",
+          value: "authenticated",
+        }),
+      ]),
+    );
+    const loginFlag = http.calls.find(({ url }) =>
+      url.includes("ws_loginflag.ashx"),
+    );
+    const flagBody = new URLSearchParams(String(loginFlag?.init?.body));
+    expect(flagBody.get("CustId")).toBe(credentials.userId);
+    expect(flagBody.get("UserCode")).toBe(credentials.account);
+    expect(flagBody.get("UserPWD")).not.toContain(credentials.password);
+    expect(flagBody.get("UserPWD")).toMatch(/^[A-Za-z0-9+/=]+$/);
+    expect(puppeteerMock.launch).not.toHaveBeenCalled();
+    expect(puppeteerMock.connect).not.toHaveBeenCalled();
+  });
+
+  it("classifies a rejected HTTP CAPTCHA without retrying credentials", async () => {
+    const http = sinopacHttpFetch({ rejectCaptcha: true });
+    const prepared = await prepareSinopacHttpCaptcha(credentials, http.fetcher);
+
+    await expect(
+      completeSinopacHttpLogin(
+        {
+          ...credentials,
+          pendingSession: prepared.pendingSession,
+          pendingSessionExpiresAt: prepared.pendingSessionExpiresAt,
+        },
+        "000000",
+        http.fetcher,
+      ),
+    ).rejects.toBeInstanceOf(SinopacCaptchaRejectedError);
+
+    expect(
+      http.calls.filter(({ url }) => url.includes("ws_loginflag.ashx")),
+    ).toHaveLength(1);
+  });
+
+  it("automatically recognizes a fresh HTTP CAPTCHA without Browser Run", async () => {
+    const http = sinopacHttpFetch();
+    const recognize = vi.fn().mockResolvedValue("575831");
+
+    await expect(
+      loginSinopacWithHttpOcr(credentials, recognize, http.fetcher),
+    ).resolves.toMatchObject({
+      protocol: "sinopac-mobile-app-json-v1",
+    });
+
+    expect(recognize).toHaveBeenCalledOnce();
+    expect(puppeteerMock.launch).not.toHaveBeenCalled();
+    expect(puppeteerMock.connect).not.toHaveBeenCalled();
+  });
+
+  it("fetches a new HTTP CAPTCHA after OCR output is invalid", async () => {
+    const http = sinopacHttpFetch();
+    const recognize = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("unreadable"))
+      .mockResolvedValueOnce("not-six-digits")
+      .mockResolvedValueOnce("575831");
+
+    await expect(
+      loginSinopacWithHttpOcr(credentials, recognize, http.fetcher),
+    ).resolves.toMatchObject({
+      protocol: "sinopac-mobile-app-json-v1",
+    });
+
+    expect(recognize).toHaveBeenCalledTimes(3);
+    expect(
+      http.calls.filter(({ url }) => url.includes("ValidateNumber.ashx")),
+    ).toHaveLength(3);
+    expect(
+      http.calls.filter(({ url }) => url.includes("ws_loginflag.ashx")),
+    ).toHaveLength(1);
+  });
+
+  it("does not retry an HTTP login after explicit credential rejection", async () => {
+    const http = sinopacHttpFetch({ loginFlagMessage: "網路密碼錯誤" });
+    const recognize = vi.fn().mockResolvedValue("575831");
+
+    await expect(
+      loginSinopacWithHttpOcr(credentials, recognize, http.fetcher),
+    ).rejects.toBeInstanceOf(SinopacCredentialRejectedError);
+
+    expect(recognize).toHaveBeenCalledOnce();
+    expect(
+      http.calls.filter(({ url }) => url.includes("ws_loginflag.ashx")),
+    ).toHaveLength(1);
+    expect(
+      http.calls.filter(
+        ({ url, init }) =>
+          url.includes("m_login.aspx") && init?.method === "POST",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects a cross-origin redirect before forwarding cookies or credentials", async () => {
+    const http = sinopacHttpFetch({ externalRedirect: true });
+    const prepared = await prepareSinopacHttpCaptcha(credentials, http.fetcher);
+
+    await expect(
+      completeSinopacHttpLogin(
+        {
+          ...credentials,
+          pendingSession: prepared.pendingSession,
+          pendingSessionExpiresAt: prepared.pendingSessionExpiresAt,
+        },
+        "575831",
+        http.fetcher,
+      ),
+    ).rejects.toBeInstanceOf(SinopacProtocolError);
+
+    expect(
+      http.calls.some(({ url }) => url.startsWith("https://example.test")),
+    ).toBe(false);
+  });
+});
+
 describe("sinopac browser session lifecycle", () => {
   it("requires one-time verification before acquiring a browser when no bank cookies exist", async () => {
     await expect(
-      createSinopacConnector({} as Fetcher).sync(credentials),
+      createSinopacConnector().sync(credentials),
     ).rejects.toBeInstanceOf(SinopacVerificationRequiredError);
     expect(puppeteerMock.launch).not.toHaveBeenCalled();
   });
@@ -132,35 +378,6 @@ describe("sinopac browser session lifecycle", () => {
     expect(browser.disconnect).toHaveBeenCalledOnce();
     expect(result.browserSessionId).toBe("pending-session");
     expect(result.captchaImage).toBe("data:image/jpeg;base64,AQID");
-  });
-
-  it("closes a submitted CAPTCHA browser when verification fails", async () => {
-    const page = {
-      type: vi.fn().mockRejectedValue(new Error("invalid captcha")),
-      url: vi
-        .fn()
-        .mockReturnValue(
-          "https://m.sinopac.com/m/member/login/m_login.aspx?RequestTrans=MobileCard",
-        ),
-    };
-    const browser = {
-      close: vi.fn().mockResolvedValue(undefined),
-      disconnect: vi.fn().mockResolvedValue(undefined),
-      pages: vi.fn().mockResolvedValue([page]),
-    };
-    puppeteerMock.connect.mockResolvedValue(browser);
-
-    await expect(
-      createSinopacConnector({} as Fetcher).sync({
-        ...credentials,
-        captcha: "123456",
-        browserSessionId: "pending-session",
-        browserSessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-      }),
-    ).rejects.toBeInstanceOf(SinopacVerificationRequiredError);
-
-    expect(browser.close).toHaveBeenCalledOnce();
-    expect(browser.disconnect).not.toHaveBeenCalled();
   });
 
   it("does not launch when the pending captcha browser is still connected", async () => {

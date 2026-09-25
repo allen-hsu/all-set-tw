@@ -604,14 +604,13 @@ describe("sinopac App JSON parser", () => {
       return new Response(JSON.stringify(payloadForUrl(url)), { status: 200 });
     });
 
-    const result = await createSinopacConnector(
-      undefined,
-      fetchMock as typeof fetch,
-    ).sync({
-      userId: "A123456789",
-      sessionCookies,
-      protocol: "sinopac-mobile-app-json-v1",
-    });
+    const result = await createSinopacConnector(fetchMock as typeof fetch).sync(
+      {
+        userId: "A123456789",
+        sessionCookies,
+        protocol: "sinopac-mobile-app-json-v1",
+      },
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(7);
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
@@ -654,14 +653,13 @@ describe("sinopac App JSON parser", () => {
       return new Response(JSON.stringify(payload), { status: 200 });
     });
 
-    const result = await createSinopacConnector(
-      undefined,
-      fetchMock as typeof fetch,
-    ).sync({
-      userId: "A123456789",
-      sessionCookies,
-      protocol: "sinopac-mobile-app-json-v1",
-    });
+    const result = await createSinopacConnector(fetchMock as typeof fetch).sync(
+      {
+        userId: "A123456789",
+        sessionCookies,
+        protocol: "sinopac-mobile-app-json-v1",
+      },
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(7);
     expect(result.bankBalanceSnapshots).toHaveLength(1);
@@ -690,14 +688,13 @@ describe("sinopac App JSON parser", () => {
       return new Response(JSON.stringify(payload), { status: 200 });
     });
 
-    const result = await createSinopacConnector(
-      undefined,
-      fetchMock as typeof fetch,
-    ).sync({
-      userId: "A123456789",
-      sessionCookies,
-      protocol: "sinopac-mobile-app-json-v1",
-    });
+    const result = await createSinopacConnector(fetchMock as typeof fetch).sync(
+      {
+        userId: "A123456789",
+        sessionCookies,
+        protocol: "sinopac-mobile-app-json-v1",
+      },
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(
@@ -737,14 +734,13 @@ describe("sinopac App JSON parser", () => {
       },
     );
 
-    const result = await createSinopacConnector(
-      undefined,
-      fetchMock as typeof fetch,
-    ).sync({
-      userId: "A123456789",
-      sessionCookies: authCookies,
-      protocol: "sinopac-mobile-app-json-v1",
-    });
+    const result = await createSinopacConnector(fetchMock as typeof fetch).sync(
+      {
+        userId: "A123456789",
+        sessionCookies: authCookies,
+        protocol: "sinopac-mobile-app-json-v1",
+      },
+    );
 
     expect(requestCookies).toHaveLength(7);
     expect(
@@ -772,7 +768,7 @@ describe("sinopac App JSON parser", () => {
       return new Response(JSON.stringify(payload), { status: 200 });
     });
 
-    await createSinopacConnector(undefined, fetchMock as typeof fetch).sync({
+    await createSinopacConnector(fetchMock as typeof fetch).sync({
       userId: "A123456789",
       sessionCookies,
       protocol: "sinopac-mobile-app-json-v1",
@@ -805,7 +801,7 @@ describe("sinopac App JSON parser", () => {
     );
 
     await expect(
-      createSinopacConnector(undefined, fetchMock as typeof fetch).sync({
+      createSinopacConnector(fetchMock as typeof fetch).sync({
         userId: "A123456789",
         sessionCookies,
         protocol: "sinopac-mobile-app-json-v1",
@@ -817,7 +813,7 @@ describe("sinopac App JSON parser", () => {
   it("does not reuse a legacy MMA session after switching protocols", async () => {
     const fetchMock = vi.fn();
     await expect(
-      createSinopacConnector(undefined, fetchMock as typeof fetch).sync({
+      createSinopacConnector(fetchMock as typeof fetch).sync({
         sessionCookies,
       }),
     ).rejects.toThrow("已改用行動銀行 App JSON API");

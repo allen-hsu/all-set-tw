@@ -64,9 +64,10 @@ import {
 } from "../../connectors/taishin";
 import {
   createSinopacConnector,
-  loginSinopacWithOcr,
-  prepareSinopacCaptcha,
+  loginSinopacWithHttpOcr,
+  prepareSinopacApiCaptcha,
   SinopacBrowserCapacityError,
+  SinopacCredentialRejectedError,
   SinopacVerificationRequiredError,
 } from "../../connectors/sinopac";
 import {
@@ -225,22 +226,24 @@ export async function prepareSinopacCaptchaSession(env: Env) {
       ? JSON.parse(settings.public_config)
       : {};
     const config = parseSinopacConfig({ ...stored, ...publicStored });
-    const prepared = await prepareSinopacCaptcha(env.BROWSER, config);
+    const prepared = await prepareSinopacApiCaptcha(config);
     await updateConnectorEncryptedConfig(
       env.DB,
       connectorId,
       await encryptJson(
         {
           ...stored,
-          browserSessionId: prepared.browserSessionId,
-          browserSessionExpiresAt: prepared.browserSessionExpiresAt,
+          pendingSession: prepared.pendingSession,
+          pendingSessionExpiresAt: prepared.pendingSessionExpiresAt,
         },
         configEncryptionKey(env),
       ),
     );
     return {
       captchaImage: prepared.captchaImage,
-      expiresAt: prepared.browserSessionExpiresAt,
+      expiresAt: prepared.pendingSessionExpiresAt,
+      digitCount: prepared.captchaDigitCount,
+      captchaKind: "numeric" as const,
     };
   } finally {
     await releaseSyncJobLock(env.DB, lockRowId, runId);
@@ -1011,16 +1014,17 @@ export async function syncSinopac(
   >;
   let activeConfig = config;
   try {
-    const connector = createSinopacConnector(env.BROWSER);
+    const connector = createSinopacConnector();
     try {
       result = await connector.sync(
         activeConfig,
         settings.sync_cursor ?? undefined,
       );
     } catch (error) {
+      if (overrides.captcha) throw error;
+      if (error instanceof SinopacCredentialRejectedError) throw error;
       if (!(error instanceof SinopacVerificationRequiredError)) throw error;
-      const session = await loginSinopacWithOcr(
-        env.BROWSER,
+      const session = await loginSinopacWithHttpOcr(
         activeConfig,
         async (imageBytes) =>
           (await recognizeValidateNumber(env.AI, imageBytes, "image/jpeg"))
@@ -1029,6 +1033,8 @@ export async function syncSinopac(
       const {
         browserSessionId: _browserSessionId,
         browserSessionExpiresAt: _browserSessionExpiresAt,
+        pendingSession: _pendingSession,
+        pendingSessionExpiresAt: _pendingSessionExpiresAt,
         captcha: _captcha,
         ...reusableConfig
       } = activeConfig;
@@ -1041,12 +1047,14 @@ export async function syncSinopac(
   } catch (error) {
     const cleaned = { ...stored };
     const hadPendingVerification = Boolean(
-      config.browserSessionId && overrides.captcha,
+      config.pendingSession && overrides.captcha,
     );
     if (hadPendingVerification) {
       delete cleaned.captcha;
       delete cleaned.browserSessionId;
       delete cleaned.browserSessionExpiresAt;
+      delete cleaned.pendingSession;
+      delete cleaned.pendingSessionExpiresAt;
     }
     if (error instanceof SinopacVerificationRequiredError) {
       delete cleaned.sessionCookies;
@@ -1054,6 +1062,10 @@ export async function syncSinopac(
       delete cleaned.candidateSessionCreatedAt;
       delete cleaned.sessionExpiresAt;
       delete cleaned.sessionKeepAliveFailures;
+      delete cleaned.pendingSession;
+      delete cleaned.pendingSessionExpiresAt;
+      delete cleaned.browserSessionId;
+      delete cleaned.browserSessionExpiresAt;
       delete cleaned.protocol;
     }
     if (
@@ -1102,6 +1114,8 @@ export async function syncSinopac(
     const {
       browserSessionId: _browserSessionId,
       browserSessionExpiresAt: _browserSessionExpiresAt,
+      pendingSession: _pendingSession,
+      pendingSessionExpiresAt: _pendingSessionExpiresAt,
       captcha: _captcha,
       ...reusableConfig
     } = activeConfig;

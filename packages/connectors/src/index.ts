@@ -82,6 +82,26 @@ import { cathaybkConfigSchema } from "./cathaybk";
 export { sinopacConfigSchema, parseSinopacConfig } from "./sinopac";
 export type { SinopacConfig } from "./sinopac";
 import { sinopacConfigSchema } from "./sinopac";
+export {
+  classifySinopacLoginMessage,
+  completeSinopacHttpLogin,
+  encryptSinopacPassword,
+  prepareSinopacHttpCaptcha,
+  requireSinopacCredentials,
+  SINOPAC_CAPTCHA_DIGIT_COUNT,
+  SINOPAC_HTTP_USER_AGENT,
+  SINOPAC_SESSION_PROTOCOL,
+  SinopacCaptchaRejectedError,
+  SinopacConnectionError,
+  SinopacCredentialRejectedError,
+  SinopacProtocolError,
+  SinopacVerificationRequiredError,
+} from "./sinopac-mobile-api";
+export type {
+  SinopacCaptchaChallenge,
+  SinopacFetch,
+  SinopacLoginSession,
+} from "./sinopac-mobile-api";
 
 export {
   parseTaishinConfig,

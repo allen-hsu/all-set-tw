@@ -6,6 +6,10 @@ export const sinopacConfigSchema = z.object({
   account: z.string().min(1).optional(),
   password: z.string().min(1).optional(),
   sessionCookies: z.string().optional(),
+  pendingSession: z.string().optional(),
+  pendingSessionExpiresAt: z.string().optional(),
+  // Legacy Browser Run challenge fields are accepted for one migration cycle
+  // so saving or syncing existing settings can remove them safely.
   browserSessionId: z.string().optional(),
   browserSessionExpiresAt: z.string().optional(),
   captcha: z
