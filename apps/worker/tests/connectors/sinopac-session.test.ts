@@ -71,6 +71,7 @@ function loginPage(certificatePem: string) {
       <input type="hidden" name="UserPWD" value="" />
       <input type="hidden" name="source" value="MWeb" />
       <input type="hidden" name="pushEnabler" value="" />
+      <!-- <input type="checkbox" name="saveId_i" value="yes" /> -->
     </form>`;
 }
 
@@ -320,6 +321,7 @@ describe("sinopac HTTP login lifecycle", () => {
     );
     expect(loginBody.has("dynamicCert")).toBe(false);
     expect(loginBody.has("dynamicTime")).toBe(false);
+    expect(loginBody.has("saveId_i")).toBe(false);
     expect(loginBody.get("dynamicUserId")).toBe("");
     expect(loginBody.get("dynamicUserCode")).toBe("");
     expect(loginBody.get("dynamicPassword")).toBe("");
