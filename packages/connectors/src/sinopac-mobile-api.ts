@@ -358,7 +358,7 @@ class SinopacLoginHttpSession {
       if (!headers.get("X-Requested-With")) headers.delete("X-Requested-With");
       let response: Response;
       try {
-        response = await this.fetcher(nextUrl, {
+        response = await this.fetcher.call(globalThis, nextUrl, {
           ...nextInit,
           headers,
           redirect: "manual",
