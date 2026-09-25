@@ -875,6 +875,14 @@ async function acquireBrowser(
 
 async function configurePage(page: Page) {
   await page.setViewport({ width: 1280, height: 800 });
+  const browserUserAgent = await page.evaluate(() => navigator.userAgent);
+  const compatibleUserAgent = browserUserAgent.replace(
+    "HeadlessChrome/",
+    "Chrome/",
+  );
+  if (compatibleUserAgent !== browserUserAgent) {
+    await page.setUserAgent(compatibleUserAgent);
+  }
   page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
 }
 
