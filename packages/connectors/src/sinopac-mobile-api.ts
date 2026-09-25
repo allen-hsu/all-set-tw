@@ -302,6 +302,21 @@ class SinopacLoginHttpSession {
       credentials.password,
       this.serverTime,
     );
+    console.info(
+      JSON.stringify({
+        event: "sinopac_login_request_ready",
+        cookieCount: this.cookies.size,
+        hasAspNetSession: this.cookies.has("ASP.NET_SessionId"),
+        hasSinopacCookie: this.cookies.has("sinopac_cookie"),
+        userCodeLength: encryptedUserCode.length,
+        passwordLength: encryptedPassword.length,
+        userCodeCrlf: countCrlf(encryptedUserCode),
+        passwordCrlf: countCrlf(encryptedPassword),
+        serverTimeFormatValid: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(
+          this.serverTime,
+        ),
+      }),
+    );
     const loginFlag = await this.postForm(LOGIN_FLAG_URL, {
       CustId: credentials.userId,
       UserCode: encryptedUserCode,
@@ -309,6 +324,15 @@ class SinopacLoginHttpSession {
       source: "MWeb",
     });
     const flagPayload = await readLoginFlag(loginFlag);
+    console.info(
+      JSON.stringify({
+        event: "sinopac_login_precheck_result",
+        header: flagPayload.header,
+        isLogin: flagPayload.isLogin,
+        outcome: classifySinopacLoginMessage(flagPayload.message),
+        message: safeLoginMessage(flagPayload.message),
+      }),
+    );
     if (flagPayload.isLogin !== "Y" && flagPayload.isLogin !== "N") {
       throw classifiedLoginError(flagPayload.message);
     }
@@ -477,9 +501,14 @@ async function readLoginFlag(response: Response) {
   }
   const record = item as Record<string, unknown>;
   return {
+    header: typeof record.Header === "string" ? record.Header : "",
     isLogin: typeof record.IsLogin === "string" ? record.IsLogin : "",
     message: typeof record.Message === "string" ? record.Message : "",
   };
+}
+
+function countCrlf(value: string) {
+  return value.match(/\r\n/g)?.length ?? 0;
 }
 
 function classifiedLoginError(message: string): Error {
