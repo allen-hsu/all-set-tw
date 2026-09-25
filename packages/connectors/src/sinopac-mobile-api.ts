@@ -557,16 +557,17 @@ function isLoginPage(url: string, html: string) {
 
 function loginFailureMessage(html: string) {
   const decoded = decodeHtml(html).replace(/\\[nrt]/g, " ");
-  const known = decoded.match(
-    /.{0,80}(?:驗證碼.*(?:錯誤|有誤|失效|逾時)|密碼.*(?:錯誤|有誤)|使用者代(?:碼|號).*(?:錯誤|有誤)|帳號.*(?:錯誤|有誤)|身分證.*(?:錯誤|有誤)|MemberNotActivated).{0,120}/i,
-  )?.[0];
-  if (known) return known.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  return decoded
+  const visibleText = decoded
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  const literalAlert = Array.from(
+    decoded.matchAll(/\b(?:alert|showalert)\(\s*(["'])(.*?)\1\s*\)/gis),
+    (match) => match[2]?.replace(/\s+/g, " ").trim() ?? "",
+  ).find((message) => classifySinopacLoginMessage(message) !== "unknown");
+  return literalAlert || visibleText;
 }
 
 function storeResponseCookies(cookies: Map<string, string>, headers: Headers) {
